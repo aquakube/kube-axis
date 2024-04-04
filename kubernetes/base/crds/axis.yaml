@@ -1,0 +1,200 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: axis.aquakube.io
+  labels:
+    app.kubernetes.io/name: axis
+    app.kubernetes.io/managed-by: aquakube
+    app.kubernetes.io/part-of: aquakube
+    app.kubernetes.io/component: crd
+spec:
+  group: aquakube.io
+  scope: Namespaced
+  names:
+    plural: axis
+    singular: axis
+    kind: AXIS
+    categories:
+    - cameras
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: >-
+            An AXIS is a camera deployed to avalon barge to monitor offshore systems remotely.
+            This resource is created and managed by field service personnel.
+            This resource will kick off a workflow to provision and configure the camera.
+          properties:
+            metadata:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: >-
+                    The name of the AXIS device.
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  description: >-
+                    The phase the camera is in (e.g 'provisioning', 
+                    'provisioned', 'provisioning_failed', etc)
+                conditions:
+                  type: array
+                  description: >-
+                    A todo item.
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                        description: >-
+                          A provision / configuration type definition.
+                      status:
+                        type: string
+                        description: >-
+                          Status of the condition, one of True, False, Unknown.
+                      reason:
+                        type: string
+                        description: >-
+                          The reason for the condition's last transition.
+                      message:
+                        type: string
+                        description: >-
+                          A human readable message
+                      lastTransitionTime:
+                        type: string
+                        description: >-
+                          Last time the condition transitioned from one status to another.
+                      lastUpdateTime:
+                        type: string
+                        description: >-
+                          The last time this condition was updated.
+            spec:
+              description: >-
+                AXISSpec defines the desired state of the AXIS camera.
+              type: object
+              properties:
+                workflow:
+                  type: object
+                  required:
+                    - version
+                    - provision_strategy
+                  description: >-
+                    The workflow configuration for the AXIS camera.
+                  properties:
+                    version:
+                      type: string
+                      description: >-
+                        The workflow verison (e.g '1.1.2'). This cooresponds to the
+                        semantically versioned code that will be utilized in the
+                        provisioning workflow.
+                    provision_strategy:
+                      type: string
+                      enum: ["resolve_mac_address", "dhcp_ip_address"]
+                      description: >-
+                        The strategy to use when provisioning the AXIS.
+                        One of ["resolve_mac_address", "dhcp_ip_address"].
+                        "resolve_mac_address" will attempt to use the provided mac_address
+                        and subnet to resolve the ip address for provisioning.
+                        "dhcp_ip_address" will use the provided dhcp ip address to
+                        provision the device.
+                    max_retries:
+                      type: integer
+                      default: 3
+                      description: >-
+                        The max number of retries the program will attempt to configure an axis camera for before throwing a permanent error.
+                    retry_delay:
+                      type: integer
+                      default: 5
+                      description: >-
+                        The delay in seconds between each retry attempt.
+                    ignore_firmware_version:
+                      type: boolean
+                      default: true
+                      description: >-
+                        NOTE: firmware updates are not supported at this time.
+                        This field should always be set to true until an update to the workflow has been made.
+                        Ignore the firmware version of the device when provisioning.
+                        This is useful when provisioning a device that has been
+                        manually updated to a newer firmware version.
+                network:
+                  type: object
+                  required:
+                    - mode
+                  description: >-
+                    The network configuration for the AXIS camera.
+                  properties:
+                    mode:
+                      type: string
+                      enum: ["static", "dhcp"]
+                      description: >-
+                        The network mode to use for the AXIS. One of ["static", "dhcp"].
+                        "static" will assign the provided static ip address to the camera, 
+                        requires field 'static_ip_address' to be set for configuration. 
+                        "dhcp" will not update any settings and simply use dhcp networking.
+                    mac_address:
+                      type: string
+                      description: >-
+                        The MAC address of the AXIS.
+                        This field must be set when using provision_strategy "resolve_mac_address".
+                    dhcp_ip_address:
+                      type: string
+                      description: >-
+                        The ip address to utilize when provisioning the device. This is only
+                        used if the "provision_strategy" is "dhcp_ip_address"
+                    subnet:
+                      type: string
+                      description: >-
+                        The subnet the camera is hosted on (e.g 10.0.9.0/24). This is only used
+                        if the "provision_strategy" is "resolve_mac_address". In this strategy,
+                        the entire subnet will be scanned to find the mac address.
+                    static_ip_address:
+                      type: string
+                      description: >-
+                        The static ip address to assign to this device. This is only used
+                        if the network "mode" is "static"
+                    router_ip_address:
+                      type: string
+                      description: >-
+                        The router ip address to utilize for static ip addressing. This is only used
+                        if the network "mode" is "static"
+                video:
+                  type: object
+                  description: >-
+                    The video configuration for the AXIS camera.
+                  properties:
+                    orientation:
+                      type: string
+                      enum: ['wall', 'ceiling']
+                      default: 'wall'
+                      description: >-
+                        The camera orientation is one of 'wall' or 'ceiling'.
+                        The camera orientation setting affects how view modes and the pan/tilt/zoom functionality are working.
+                        Wall mounting eliminates views modes [3] Double Panorama, [4] Quad View, [9] Corner Left, [10] Corner Right, [11] Double Corner
+                    zipstream_strength:
+                      type: integer
+                      enum: [10, 20, 30, 40, 50]
+                      default: 10
+                      description: >-
+                        Zipstream strength is a measure of the amount of bit rate savings. Increasing the strength reduces the bit rate but will also affect image quality outside the area of interest and not affect the forensic details.
+                        By default, Axis products with Zipstream technology are configured to use strength 10 and fixed GOP mode.
+                        This setting reduces the bit rate significantly without affecting the visual image quality and is compatible with third-party clients and VMS solutions.
+                        Zipstream strength 30 or higher (30 for cameras with firmware before firmware version 6.30) with dynamic GOP is recommended for cameras that are connected to the cloud and for cameras that record to SD cards and need to limit the bit rate in order to keep recordings for a longer time.
+                        To further optimize the use of storage, this setting can be combined with motion-triggered recording and/or maximum bit rate control (MBR).
+                        The zipstream strength must be set to one of the following values: [10, 20, 30, 40, 50]
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Version
+          type: string
+          description: The workflow version
+          jsonPath: .spec.workflow.version
+        - name: Phase
+          type: string
+          description: The current phase of the AXIS camera workflow
+          jsonPath: .status.phase

@@ -1,0 +1,169 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: "{{ name }}-provisioning-"
+  labels:
+    axis.aquakube.io/name: "{{ name }}"
+spec:
+  entrypoint: entry
+  parallelism: 1
+  archiveLogs: true
+  dnsPolicy: ClusterFirstWithHostNet
+  hostNetwork: true
+  artifactRepositoryRef:
+    configMap: artifact-repositories
+    key: default-s3-artifact-repository
+  imagePullSecrets:
+    - name: k8s-ecr-login-renew-docker-secret
+  onExit: axis-notify
+  templates:
+    - name: entry
+      dag:
+        tasks:
+          - name: axis-discover
+            template: axis-discover
+
+          - name: axis-provision
+            depends: axis-discover.Succeeded
+            template: axis-provision
+            arguments:
+              artifacts:
+                - name: state
+                  from: "{% raw %}{{tasks.axis-discover.outputs.artifacts.state}}{% endraw %}"
+
+          - name: axis-configure
+            depends: axis-provision.Succeeded
+            template: axis-configure
+            arguments:
+              artifacts:
+                - name: state
+                  from: "{% raw %}{{tasks.axis-provision.outputs.artifacts.state}}{% endraw %}"
+
+          - name: axis-verify
+            depends: axis-configure.Succeeded
+            template: axis-verify
+            arguments:
+              artifacts:
+                - name: state
+                  from: "{% raw %}{{tasks.axis-configure.outputs.artifacts.state}}{% endraw %}"
+
+    - name: axis-discover
+      container:
+        image:  "{{ image }}"
+        imagePullPolicy: IfNotPresent
+        command: ["python3"]
+        args: ["main.py", "--command=discover"]
+        env:
+          - name: RESOURCE
+            value: "{{ resource }}"
+          - name: FIRMWARE_ALLOW_LIST
+            value: "{{ firmware_allow_list }}"
+          - name: FIRMWARE_DENY_LIST
+            value: "{{ firmware_deny_list }}"
+      activeDeadlineSeconds: 120 # 2 minutes
+      outputs:
+        artifacts:
+        - name: state
+          path: /tmp/state.json
+          s3:
+            key: "workflow-artifacts/{% raw %}{{workflow.uid}}{% endraw %}/state.json"
+
+    - name: axis-provision
+      inputs:
+        artifacts:
+        - name: state
+          path: /tmp/state.json
+      container:
+        image:  "{{ image }}"
+        imagePullPolicy: IfNotPresent
+        command: ["python3"]
+        args: ["main.py", "--command=provision"]
+        env:
+          - name: RESOURCE
+            value: "{{ resource }}"
+          - name: ENVIRONMENT
+            value: k3s
+      activeDeadlineSeconds: 300 # 5 minutes
+      outputs:
+        artifacts:
+          - name: state
+            path: /tmp/state.json
+            s3:
+              key: "workflow-artifacts/{% raw %}{{workflow.uid}}{% endraw %}/state.json"
+
+    - name: axis-configure
+      inputs:
+        artifacts:
+        - name: state
+          path: /tmp/state.json
+      container:
+        image:  "{{ image }}"
+        imagePullPolicy: IfNotPresent
+        command: ["python3"]
+        args: ["main.py", "--command=configure"]
+        env:
+          - name: RESOURCE
+            value: "{{ resource }}"
+          - name: ENVIRONMENT
+            value: k3s
+          - name: AWS_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: aws-credentials
+                key: aws_access_key_id
+          - name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: aws-credentials
+                key: aws_secret_access_key
+      activeDeadlineSeconds: 300 # 5 minutes
+      outputs:
+        artifacts:
+          - name: state
+            path: /tmp/state.json
+            s3:
+              key: "workflow-artifacts/{% raw %}{{workflow.uid}}{% endraw %}/state.json"
+
+    - name: axis-verify
+      inputs:
+        artifacts:
+        - name: state
+          path: /tmp/state.json
+      container:
+        image: "{{ image }}"
+        imagePullPolicy: IfNotPresent
+        command: ["python3"]
+        args: ["main.py", "--command=verify"]
+        env:
+          - name: RESOURCE
+            value: "{{ resource }}"
+      activeDeadlineSeconds: 240 # 4 minutes
+      outputs:
+        artifacts:
+          - name: state
+            path: /tmp/state.json
+            s3:
+              key: "workflow-artifacts/{% raw %}{{workflow.uid}}{% endraw %}/state.json"
+
+    - name: axis-notify
+      inputs:
+        artifacts:
+          - name: state
+            path: /tmp/state.json
+            s3:
+              key: "workflow-artifacts/{% raw %}{{workflow.uid}}{% endraw %}/state.json"
+      container:
+        image: "{{ image }}"
+        imagePullPolicy: IfNotPresent
+        command: ["python3"]
+        args: ["main.py", "--command=notify"]
+        env:
+          - name: RESOURCE
+            value: "{{ resource }}"
+          - name: GOOGLE_WEBHOOK
+            value: "{{ google_webhook }}"
+          - name: SLACK_WEBHOOK
+            value: "{{ slack_webhook }}"
+          - name: WORKFLOW_STATUS
+            value: "{% raw %}{{workflow.status}}{% endraw %}"
+      activeDeadlineSeconds: 120 # 2 minutes

@@ -1,0 +1,30 @@
+apiVersion: skaffold/v4beta1
+kind: Config
+metadata:
+  name: axis
+build:
+  tagPolicy:
+    gitCommit:
+      variant: AbbrevCommitSha
+      ignoreChanges: true
+  artifacts:
+  - image: 456087932636.dkr.ecr.us-west-2.amazonaws.com/kube-axis/workflow
+    context: apps/workflow
+    docker:
+      dockerfile: Dockerfile
+    hooks:
+      before:
+        - command: ["sh", "-c", "aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin 456087932636.dkr.ecr.us-west-2.amazonaws.com"]
+          os: [darwin, linux]
+  - image: 456087932636.dkr.ecr.us-west-2.amazonaws.com/kube-axis/operator
+    context: apps/operator
+    docker:
+      dockerfile: Dockerfile
+    hooks:
+      before:
+        - command: ["sh", "-c", "aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin 456087932636.dkr.ecr.us-west-2.amazonaws.com"]
+          os: [darwin, linux]
+manifests:
+  kustomize:
+    paths:
+    - kubernetes/base

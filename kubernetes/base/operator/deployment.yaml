@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: axis-operator
+  labels:
+    app.kubernetes.io/name: axis-operator
+    app.kubernetes.io/version: latest
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/part-of: axis
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: axis-operator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: axis-operator
+    spec:
+      serviceAccountName: axis-operator
+      imagePullSecrets:
+      - name: k8s-ecr-login-renew-docker-secret
+      containers:
+      - name: operator
+        image: 456087932636.dkr.ecr.us-west-2.amazonaws.com/kube-axis/operator:7cd29b3
+        ports:
+          - containerPort: 5555
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+          limits:
+            cpu: 150m
+            memory: 250Mi
+        env:
+          - name: ENVIRONMENT
+            value: "prod"
+          - name: NAMESPACE
+            value: "axis"
+          - name: SERVICE_NAME
+            value: "axis-operator"
+          - name: SERVICE_PORT
+            value: "443"
+          - name: CONTAINER_PORT
+            value: "5555"
+          - name: GOOGLE_WEBHOOK
+            value: https://chat.googleapis.com/v1/spaces/AAAAh0JGzRU/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=FvqH0HvfxZSTm9sizGk62ZxSlFEwZui99DUhsnuB3Ig%3D
+          - name: SLACK_WEBHOOK
+            value: https://hooks.slack.com/services/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
+          - name: FIRMWARE_ALLOW_LIST
+            value: "V4.02.R12.00037972.10012.048100.00000,V5.00.R02.000699H7.10010.140600.0020000"
+          - name: FIRMWARE_DENY_LIST
+            value: "V4.03.R12.00037972.11012.045300.0020000"
